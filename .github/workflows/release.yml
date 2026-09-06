@@ -13,7 +13,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: build
@@ -24,7 +26,24 @@ jobs:
           cp target/release/wwrpc dist/
           cp assets/wwrpc.service dist/
           tar -czf wwrpc-${{ github.ref_name }}-linux-x86_64.tar.gz -C dist wwrpc wwrpc.service
-      - uses: softprops/action-gh-release@v2
+      - name: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+            echo "No previous tag found; listing all commits reachable from HEAD."
+          else
+            RANGE="$PREV_TAG..HEAD"
+          fi
+          {
+            echo "## Commits in ${{ github.ref_name }} ($RANGE)"
+            echo ""
+            git log "$RANGE" --pretty=format:'- %s (%h)' --reverse
+            echo ""
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+      - uses: softprops/action-gh-release@v3
         with:
           files: wwrpc-${{ github.ref_name }}-linux-x86_64.tar.gz
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
