@@ -1,0 +1,29 @@
+[package]
+name = "wwrpc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Wuthering Waves Discord Rich Presence for Linux (Steam/Proton): auto-detects the game, reads Union Level and Region from a RAM copy of LocalStorage, publishes tiered rich presence with character portraits"
+license = "GPL-3.0-only"   # full text in COPYING
+readme = "README.md"
+repository = "https://github.com/yiesko/wwrpc"
+keywords = ["discord", "rich-presence", "wuthering-waves", "linux", "gaming"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+# Git: wwrpc builds against the published fork, never the colocated tree.
+rsrpc = { git = "https://github.com/yiesko/rsRPC.git", branch = "main" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde_json = "1.0"
+ureq = { version = "3", default-features = false, features = ["rustls", "charset"] }
+clap = { version = "4", features = ["derive", "help", "usage"] }
+ctrlc = "3"
+libc = "0.2"
+chrono = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

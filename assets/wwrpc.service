@@ -1,0 +1,15 @@
+[Unit]
+Description=Wuthering Waves Discord Rich Presence
+Documentation=https://github.com/yiesko/rsRPC
+After=graphical-session.target
+
+[Service]
+# Assumes `cargo install --path wwrpc` (from the repo root, or a copy of
+# the binary) placed wwrpc in ~/.cargo/bin. Adjust ExecStart if yours
+# lives elsewhere.
+ExecStart=%h/.cargo/bin/wwrpc
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

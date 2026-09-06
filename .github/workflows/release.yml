@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: cargo build --release --locked
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/release/wwrpc dist/
+          cp assets/wwrpc.service dist/
+          tar -czf wwrpc-${{ github.ref_name }}-linux-x86_64.tar.gz -C dist wwrpc wwrpc.service
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: wwrpc-${{ github.ref_name }}-linux-x86_64.tar.gz
+          generate_release_notes: true
