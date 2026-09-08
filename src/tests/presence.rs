@@ -163,3 +163,46 @@ fn character_icon_owns_small_slot_with_name_first() {
     assert_eq!(activity["assets"]["small_image"], "denia");
     assert_eq!(activity["assets"]["small_text"], "Denia • v3.6.13");
 }
+
+#[test]
+fn official_activity_with_portrait_url() {
+    use crate::presence::official_activity;
+
+    let value = official_activity(
+        1_700_000_000_000,
+        "grazielle",
+        "Lv. 64 | Region: America",
+        Some(
+            "https://cdn.jsdelivr.net/gh/ryanbenson/wuthering-waves-assets@master/images/Denia.png",
+        ),
+    );
+    assert_eq!(value["details"], "grazielle");
+    assert_eq!(
+        value["assets"]["large_image"],
+        "https://cdn.jsdelivr.net/gh/ryanbenson/wuthering-waves-assets@master/images/Denia.png"
+    );
+}
+
+#[test]
+fn official_activity_mirrors_text_without_custom_art() {
+    use crate::presence::official_activity;
+
+    let value = official_activity(
+        1_700_000_000_000,
+        "grazielle",
+        "Lv. 64 | Region: America",
+        None,
+    );
+    assert_eq!(value["details"], "grazielle");
+    assert_eq!(value["state"], "Lv. 64 | Region: America");
+    assert_eq!(value["timestamps"]["start"], 1_700_000_000_000_i64);
+    assert_eq!(value["instance"], false);
+    // No custom art by design: official-app keys are unknown, and a broken
+    // image slot is worse than none.
+    assert!(value["assets"].is_null());
+
+    // Empty state omits the field instead of publishing blank text.
+    let bare = official_activity(1_700_000_000_000, "Exploring SOL-III", "", None);
+    assert_eq!(bare["details"], "Exploring SOL-III");
+    assert!(bare.get("state").is_none());
+}

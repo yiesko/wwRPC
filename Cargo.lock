@@ -1274,12 +1274,13 @@ dependencies = [
 
 [[package]]
 name = "rsrpc"
-version = "0.29.0"
-source = "git+https://github.com/yiesko/rsRPC.git?branch=main#b117464edf0e7acd4ce87f2f35406241bff5ce5f"
+version = "0.32.0"
+source = "git+https://github.com/yiesko/rsRPC.git?tag=v0.32.0#26c8053c9c8eda20933bb7dbf6a52892d4940a74"
 dependencies = [
  "aho-corasick",
  "chrono",
  "interprocess",
+ "libc",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -2136,7 +2137,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "wwrpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "clap",

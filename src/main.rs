@@ -35,6 +35,11 @@ use wwrpc::presence::{LiveContext, account_switched, now_millis, should_resend};
 /// with `--app-id` / `WWRPC_APP_ID` for a personal app.
 const DEFAULT_APP_ID: &str = "1546176429048463360";
 
+/// Official Wuthering Waves application: publishing here links the
+/// presence to the in-Discord game page (directory entry). Custom art
+/// lives on the user's own app and will NOT render in this slot.
+const OFFICIAL_APP_ID: &str = "1247227126416146462";
+
 /// Resolve the character icon: `--character` wins, `WWRPC_CHARACTER`
 /// fills in when the flag is absent; blank means unset. Unknown names
 /// warn (with the input echoed — it is the operator's own flag, not game
@@ -121,6 +126,19 @@ struct Args {
     #[arg(long)]
     character: Option<String>,
 
+    /// Companion presence on the official game app for the in-Discord game
+    /// page (same details/state, no custom art). Needs rsRPC (or anything
+    /// else) to NOT publish that slot: set `--ignore-ids` there. Also
+    /// `WWRPC_GAME_PAGE=1`.
+    #[arg(long)]
+    game_page: bool,
+
+    /// Companion slot shows the character portrait via external URL
+    /// (zero uploads, renders anywhere). Needs `--game-page` and
+    /// `--character`. Also `WWRPC_GAME_PAGE_PORTRAITS=1`.
+    #[arg(long)]
+    game_page_portraits: bool,
+
     /// List selectable character names (`Display (key)`) and exit.
     #[arg(long)]
     list_characters: bool,
@@ -190,6 +208,16 @@ impl Session {
             last_tier: None,
         }
     }
+}
+
+/// Truthy env (`1/true/yes/on`, any case): `--flag` wins, env fills in.
+fn env_flag(flag: bool, name: &str) -> bool {
+    flag || std::env::var(name).is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 /// Short tier name for logging: what a tick decided, in one word.
@@ -272,6 +300,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let character = resolve_character(character_input(args.character.as_deref()).as_deref());
+    let game_page = env_flag(args.game_page, "WWRPC_GAME_PAGE");
+    let game_page_portraits = env_flag(args.game_page_portraits, "WWRPC_GAME_PAGE_PORTRAITS");
+    // Portrait URL for the companion slot (external art, zero uploads).
+    // Needs both a character and the companion slot itself.
+    let companion_portrait: Option<String> = if game_page_portraits {
+        match (&character, game_page) {
+            (Some(character), true) => Some(wwrpc::character::portrait_url(character)),
+            (None, _) => {
+                log::warn("--game-page-portraits needs --character; companion stays imageless");
+                None
+            }
+            (_, false) => {
+                log::warn("--game-page-portraits needs --game-page; ignoring");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     if args.print_activity {
         // Isolated temp snapshot: never touches the service's runtime dir.
@@ -301,7 +348,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             live,
         );
         match publish.into_activity() {
-            Some(activity) => println!("{}", serde_json::to_string_pretty(&activity)?),
+            Some(activity) => {
+                println!("{}", serde_json::to_string_pretty(&activity)?);
+                if game_page
+                    && let (Some(details), state) = (
+                        activity.get("details").and_then(|v| v.as_str()),
+                        activity.get("state").and_then(|v| v.as_str()).unwrap_or(""),
+                    )
+                {
+                    println!("--- official companion ---");
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&wwrpc::presence::official_activity(
+                            now_millis(),
+                            details,
+                            state,
+                            companion_portrait.as_deref()
+                        ))?
+                    );
+                }
+            }
             None => println!("(silent: no rich data — game detection would own the slot)"),
         }
         let _ = std::fs::remove_dir_all(&diagnostics_dir);
@@ -352,13 +418,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|| args.app_id.clone())
     };
     let mut ipc = IpcClient::new(app_id);
+    // Companion slot on the official app (game page linkage). Separate
+    // connection + session from the primary slot.
+    let mut ipc_official = game_page.then(|| IpcClient::new(OFFICIAL_APP_ID.to_string()));
+    // The companion MUST NOT reuse the game pid: the bridge keys presence
+    // by socketId = pid, so two connections sharing one pid overwrite each
+    // other and only the last-published slot displays. Our own pid is
+    // stable for the session, nonzero (so clears still count as genuine),
+    // and can never collide with the game pid.
+    let official_pid = std::process::id() as u64;
     let presence_every = Duration::from_secs(args.interval.max(5));
     let detect_every = Duration::from_secs(args.detect_interval.max(1));
 
     let mut session: Option<Session> = None;
+    let mut official_session: Option<Session> = None;
     let mut last_pid: Option<u64> = None;
     let mut announced_waiting_game = false;
     let mut announced_waiting_discord = false;
+    let mut announced_waiting_discord_official = false;
 
     while running.load(Ordering::SeqCst) {
         let game = match detector.detect() {
@@ -375,8 +452,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 log::info("game closed, clearing presence and waiting...");
                 if let Some(pid) = last_pid {
                     ipc.clear(pid);
+                    if let Some(official) = ipc_official.as_mut() {
+                        official.clear(official_pid);
+                    }
                 }
                 ipc.close();
+                if let Some(official) = ipc_official.as_mut() {
+                    official.close();
+                }
+                official_session = None;
             } else if !announced_waiting_game {
                 log::info("waiting for Wuthering Waves...");
                 announced_waiting_game = true;
@@ -404,6 +488,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             announced_waiting_discord = false;
             session = Some(Session::new(pid));
+            official_session = ipc_official.as_ref().map(|_| Session::new(pid));
         }
         let active = session.as_mut().expect("session just set");
 
@@ -433,6 +518,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // Companion slot: same cadence, own connection. A failed companion
+        // connect skips only this slot for the tick (never the primary).
+        if let Some(official) = ipc_official.as_mut()
+            && !official.is_connected()
+        {
+            match official.connect() {
+                Ok(()) => {
+                    log::info("connected to Discord (official slot)");
+                    announced_waiting_discord_official = false;
+                }
+                Err(err) => {
+                    if !announced_waiting_discord_official {
+                        log::warn(format!("official slot: {err}"));
+                        announced_waiting_discord_official = true;
+                    }
+                }
+            }
+        }
+
         let refresh = db.as_mut().map(|db| db.refresh());
         log::debug(format!(
             "presence tick: pid {pid}, refresh {:?}, degraded {}",
@@ -453,6 +557,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             active.unchanged_streak = 0;
             active.last_send = None;
             active.silence_cleared = false;
+            // Companion slot restarts with it (same clock, fresh payload).
+            if let Some(session) = official_session.as_mut() {
+                session.start_ms = active.start_ms;
+                session.uid = active.uid.clone();
+                session.last_body = None;
+                session.unchanged_streak = 0;
+                session.last_send = None;
+                session.silence_cleared = false;
+            }
         } else if active.uid.is_none() {
             active.uid = current_uid.map(str::to_string);
         }
@@ -501,6 +614,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // (e.g. rsRPC) owns the slot instead of a static fallback.
             if !active.silence_cleared {
                 ipc.clear(pid);
+                if let Some(session) = official_session.as_mut() {
+                    if let Some(official) = ipc_official.as_mut() {
+                        official.clear(official_pid);
+                    }
+                    session.silence_cleared = true;
+                }
                 active.silence_cleared = true;
                 log::info("no rich data; leaving presence to game detection");
             }
@@ -508,6 +627,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         active.silence_cleared = false;
+        // Companion slot follows the primary: same details/state (hence the
+        // same tier decision), official app for the game-page linkage. No
+        // custom art here by design — those keys only exist on our own app.
+        if let (Some(session), Some(official)) = (official_session.as_mut(), ipc_official.as_mut())
+        {
+            session.silence_cleared = false;
+            let details = activity
+                .get("details")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Wuthering Waves");
+            let state = activity.get("state").and_then(|v| v.as_str()).unwrap_or("");
+            let companion = wwrpc::presence::official_activity(
+                active.start_ms,
+                details,
+                state,
+                companion_portrait.as_deref(),
+            );
+            if let Ok(body) = serde_json::to_string(&companion) {
+                if should_resend(
+                    session.last_body.as_deref(),
+                    &body,
+                    session.unchanged_streak,
+                ) {
+                    match official.set_activity(official_pid, companion) {
+                        Ok(()) => {
+                            log::debug(format!("official slot sent ({} bytes)", body.len()));
+                            session.last_body = Some(body);
+                            session.unchanged_streak = 0;
+                            session.last_send = Some(Instant::now());
+                        }
+                        Err(_) => {
+                            log::warn("official slot: Discord connection lost, reconnecting...");
+                            official.close();
+                        }
+                    }
+                } else {
+                    log::debug("official slot unchanged, skipping send");
+                    session.unchanged_streak += 1;
+                    session.last_send = Some(Instant::now());
+                }
+            }
+        }
         let body = serde_json::to_string(&activity)?;
         if should_resend(active.last_body.as_deref(), &body, active.unchanged_streak) {
             match ipc.set_activity(pid, activity) {
@@ -534,6 +695,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(pid) = last_pid {
         ipc.clear(pid);
+        if let Some(official) = ipc_official.as_mut() {
+            official.clear(official_pid);
+        }
     }
     Ok(())
 }

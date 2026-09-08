@@ -129,6 +129,32 @@ pub fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// Companion presence for the official game app (in-Discord game page).
+/// Mirrors the primary activity's details/state so both slots tell the
+/// same story. With `portrait` (an external `https://` image URL), the
+/// large slot shows that art — Discord proxies external URLs, so custom
+/// art works here with zero uploads; without it, no image slot at all
+/// (official-app keys are unknown, and a broken slot is worse than none).
+pub fn official_activity(
+    start_ms: i64,
+    details: &str,
+    state: &str,
+    portrait: Option<&str>,
+) -> Value {
+    let mut activity = json!({
+      "details": details,
+      "timestamps": {"start": start_ms},
+      "instance": false,
+    });
+    if !state.is_empty() {
+        activity["state"] = json!(state);
+    }
+    if let Some(portrait) = portrait {
+        activity["assets"] = json!({"large_image": portrait});
+    }
+    activity
+}
+
 /// Static presence: no game files involved at all.
 pub fn static_activity(start_ms: i64) -> Value {
     json!({

@@ -40,7 +40,7 @@ fn find_rejects_blank_and_unknown() {
 #[test]
 fn all_lists_every_character_once_alphabetically() {
     let listed: Vec<_> = all().collect();
-    assert_eq!(listed.len(), 61);
+    assert_eq!(listed.len(), 63);
     let mut keys: Vec<_> = listed.iter().map(|c| c.key).collect();
     keys.sort_unstable();
     keys.dedup();
@@ -50,4 +50,24 @@ fn all_lists_every_character_once_alphabetically() {
     // Assets are lowercase upload names; displays are human text.
     assert!(listed.iter().all(|c| c.asset == c.key));
     assert!(listed.iter().all(|c| !c.display.is_empty()));
+}
+
+#[test]
+fn portrait_url_uses_exact_upstream_filename() {
+    use crate::character::{find, portrait_url};
+
+    // Case-sensitive CDN paths: the URL must carry the real file stem,
+    // not the lowercase match key (e.g. XiangliYao, Roverelectrofemale).
+    assert_eq!(
+        portrait_url(&find("denia").unwrap()),
+        "https://cdn.jsdelivr.net/gh/ryanbenson/wuthering-waves-assets@master/images/Denia.png"
+    );
+    assert_eq!(
+        portrait_url(&find("xiangli yao").unwrap()),
+        "https://cdn.jsdelivr.net/gh/ryanbenson/wuthering-waves-assets@master/images/XiangliYao.png"
+    );
+    assert_eq!(
+        portrait_url(&find("Rover Electro Female").unwrap()),
+        "https://cdn.jsdelivr.net/gh/ryanbenson/wuthering-waves-assets@master/images/Roverelectrofemale.png"
+    );
 }
