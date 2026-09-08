@@ -47,6 +47,8 @@ wwrpc [OPTIONS]
 | `--account-index <N>` | — | Pin the Nth stored account (wins over `--kuro-uid`) |
 | `--player-name <NAME>` | — | Free-text display name; always wins over resolved names |
 | `--character <NAME>` | `WWRPC_CHARACTER` | Portrait icon (see Character icons) |
+| `--game-page` | `WWRPC_GAME_PAGE=1` | Companion presence on the official app (see Game page) |
+| `--game-page-portraits` | `WWRPC_GAME_PAGE_PORTRAITS=1` | Portrait via URL on the companion (needs both above) |
 | `--list-accounts` | — | List stored accounts (`N: Region, Union LEVEL`, no uids) and exit |
 | `--list-characters` | — | List valid character names and exit |
 | `--print-activity` | — | Print this moment's activity JSON and exit (dry run: no IPC, no lock) |
@@ -161,6 +163,30 @@ stat/UI icons, echo-set names, legacy `Rover-*` dash files, skins and
 Upstream renames files occasionally (`RoverElectroFemale.png` →
 `Roverelectrofemale.png`) — matching is case-insensitive, so renames
 never break `--character`.
+
+# Game page
+
+Clicking the rich presence normally shows just the app. `--game-page`
+(or `WWRPC_GAME_PAGE=1`) additionally publishes a companion presence on
+the **official** game app (`1247227126416146462`), which Discord links
+to the in-client Wuthering Waves page (info, art) — same details/state,
+no custom art (official-app keys are unknown; a broken slot is worse
+than none). One slot = one app, so both stay up: yours (icons, name,
+level) + official (page linkage).
+
+This needs the official slot free of *generic* publishers: rsRPC
+≥ 0.32.0 handles that itself via IPC-wins handoff (its generic card
+shows until this companion publishes, yields, and resumes if the
+companion clears). With older rsRPC, silence the slot instead, e.g.
+`RSRPC_IGNORE_IDS=1247227126416146462` (or `--ignore-ids`).
+The companion uses its own process pid (never the game pid), so both
+slots stay up with distinct bridge identities and clear independently.
+The companion follows the primary: silent stretches and game close
+clear both; `--print-activity` shows both payloads.
+
+With `--game-page-portraits` (needs `--game-page` + `--character`), the
+companion also carries the portrait as an external `https://` image
+(zero uploads — Discord proxies it). Same trade, no portal step.
 
 # Logging
 

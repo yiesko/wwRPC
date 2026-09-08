@@ -17,3 +17,6 @@
 
 # Local-only service drop-ins (may carry personal flags/env).
 *.service.d/
+
+# JetBrains IDE project files.
+.idea/
