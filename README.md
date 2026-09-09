@@ -6,6 +6,65 @@
   </p>
 </div>
 
+# Showcase
+
+What your Discord profile looks like with wwrpc running:
+
+![Static fallback presence](assets/screenshots/1.png)
+*Static presence — display name plus `Exploring SOL-III` with session timer.*
+
+![Rich presence with level and region](assets/screenshots/2.png)
+*Rich presence — display name, `Lv. 65 | Region: America`, portrait icon, session timer.*
+
+![Profile card with game-page linkage](assets/screenshots/3.png)
+*Profile card — the companion slot links the status to the in-Discord Wuthering Waves game page (`Add to your "Games in Rotation"`).*
+
+# Features
+
+* **Real Rich Presence on Linux.** Discord never detects Proton games —
+  wwrpc publishes it directly over local IPC: display name (or
+  `Union Level {level}`), `Lv. {n} | Region: {region}`, finished-quest
+  count and game version on icon hover, portrait art, and a session
+  elapsed timer that restarts on pid change or account switch.
+* **63 character portraits.** `--character <name>` shows any of 63
+  portraits as `small_image` (`--list-characters` lists them all,
+  Rover variants included). Matching is case-insensitive; unknown names
+  warn and publish iconless. Use your own Discord app id for a personal
+  setup (see Character icons).
+* **Game-page linkage.** `--game-page` additionally publishes a
+  companion presence on the official game app
+  (`1247227126416146462`), so the status links to the in-client
+  Wuthering Waves page — same details/state, no custom art. With
+  `--game-page-portraits` the companion also carries the portrait as an
+  external `https://` image (zero uploads — Discord proxies it). The
+  companion uses its own process pid and follows the primary: silent
+  stretches and game close clear both slots.
+* **Identity-first account resolution.** The live login is resolved each
+  tick: pinned account (`--account-index`, wins over everything) →
+  override (`--kuro-uid`) → auto-detected login → `SdkLevelData` row →
+  fresh (<24h) telemetry recovery matched to the live role. A role
+  switch drops stale data at once; gaps change nothing.
+* **Graceful tiers, never a broken card.** Rich level data → named
+  identity → static `Exploring SOL-III` (only with
+  `--static-fallback`) → silence (clear once, let game detection own
+  the slot). One missing source never sinks the rest.
+* **Read-only safety model.** Game files are never opened as SQLite,
+  never written, never held open: each tick byte-copies the database to
+  tmpfs, rejects the copy on mid-copy `mtime` change, queries only the
+  copy, then deletes it. A sentinel stops all game-file access for the
+  session if WuWa ever spawns a numbered database (see Safety).
+* **Private by default.** Uids and account values never print — logs
+  carry shapes only (counts, booleans, event ages). Presence goes to
+  Discord's local IPC socket; nothing phones home.
+* **Plays nice with rsRPC.** Game detection rides on
+  [rsRPC](https://github.com/yiesko/rsRPC) ≥ 0.32.0, which yields the
+  official slot via IPC-wins handoff while the companion is up and
+  resumes when it clears. Single instance (pid-file lock), Ctrl+C
+  clears presence, identical payloads deduped with heartbeat.
+* **Diagnostics without side effects.** `--list-accounts` (no uids),
+  `--list-characters`, and `--print-activity` (exact JSON of both
+  slots, no IPC, no lock) make every state inspectable.
+
 # Install
 
 Requirements: Cargo + Rust 1.88+ (edition 2024).
@@ -139,10 +198,10 @@ first-login-sticky — recognition aid, never session truth.
 Portraits follow `ryanbenson/wuthering-waves-assets` (`images/*.png`)
 by name only — nothing copied in (art belongs to Kuro Games). Discord
 renders only art uploaded to the app in use: the default community app
-(`1546176429048463360`) ships all 61 upstream portraits plus the logo,
+(`1546176429048463360`) ships all 63 portraits plus the logo,
 so every `--list-characters` name resolves out of the box. (No public
 API lists an app's assets — verify in the portal: Rich Presence → Art
-Assets should show 62 entries. A new upstream portrait needs two steps:
+Assets should show 64 entries. A new upstream portrait needs two steps:
 upload it under its lowercase key, and add its line to `character.rs`.)
 Running your own app id instead? Upload the same keys there (steps
 below) — a personal app also isolates you from community-app changes.
@@ -157,7 +216,7 @@ below) — a personal app also isolates you from community-app changes.
 3. `--app-id <id>` or `WWRPC_APP_ID=<id>`. New art can take hours to
    appear; restart Discord to clear its icon cache.
 
-Keep only character portraits (62 files with the logo): lowercase
+Keep only character portraits (64 files with the logo): lowercase
 stat/UI icons, echo-set names, legacy `Rover-*` dash files, skins and
 `Unknown*` placeholders in `images/` are not selectable and stay out.
 Upstream renames files occasionally (`RoverElectroFemale.png` →
